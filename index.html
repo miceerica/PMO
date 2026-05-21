@@ -251,7 +251,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Micr
 @keyframes charBounce{from{transform:translateY(0)}to{transform:translateY(-10px)}}
 .food-item{
   position:absolute;font-size:42px;cursor:pointer;
-  animation:foodDrift linear forwards;
+  animation:foodDrift1 linear forwards;
   user-select:none;touch-action:manipulation;
   filter:drop-shadow(1px 2px 4px rgba(0,0,0,.25));
   z-index:5;bottom:44px;
@@ -261,7 +261,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Micr
   -webkit-tap-highlight-color:rgba(0,0,0,0);
 }
 .food-item:hover,.food-item:active{transform:scale(1.3)}
-@keyframes foodDrift{from{left:110%}to{left:-90px}}
+/* 3 variants of wavy food drift — fast/slow pulses */
+@keyframes foodDrift1{
+  0%{left:110%} 8%{left:70%} 28%{left:58%} 38%{left:20%}
+  58%{left:10%} 70%{left:-20%} 100%{left:-110px}
+}
+@keyframes foodDrift2{
+  0%{left:110%} 20%{left:94%} 33%{left:52%} 53%{left:40%}
+  65%{left:4%} 80%{left:-8%} 100%{left:-110px}
+}
+@keyframes foodDrift3{
+  0%{left:110%} 12%{left:62%} 22%{left:55%} 34%{left:16%}
+  46%{left:8%} 56%{left:-18%} 100%{left:-110px}
+}
 .pts-pop{position:absolute;font-size:16px;font-weight:800;color:var(--green);pointer-events:none;animation:ptsPop .9s ease-out forwards;z-index:20}
 @keyframes ptsPop{from{transform:translateY(0);opacity:1}to{transform:translateY(-60px);opacity:0}}
 .pts-pop.bad{color:#E04030!important;font-size:24px!important}
@@ -422,7 +434,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Micr
       <div class="header-ava">🍽️</div>
       <div>
         <div class="header-title">PMO吃到飽交流會</div>
-        <div class="header-sub">115年 6–8月 · 週三四五 · 12:00起</div>
+        <div class="header-sub">115年 6–7月 · 週三四五 · 12:00–17:00 · 可請4小時公假 · <strong style="font-size:1.15em;color:var(--warm)">較傾向⭐星期五</strong></div>
       </div>
     </div>
     <div class="header-user">
@@ -493,6 +505,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Micr
       <div class="sec" style="padding-top:20px">
         <div class="sec-title"><span>餐廳詳細資訊</span></div>
         <div id="restCards"></div>
+      </div>
+
+      <!-- All Voter Records (visible to everyone) -->
+      <div class="sec" style="padding-top:20px">
+        <div class="sec-title"><span>📋 所有人的投票記錄</span></div>
+        <div id="allVoterListVote"></div>
       </div>
     </div>
 
@@ -868,6 +886,7 @@ function renderAll() {
   renderRestOpts();
   renderRestCards();
   renderStats();
+  renderAllVoterList();
 }
 
 /* ── My Vote Summary ── */
@@ -1125,25 +1144,27 @@ function toggleExpand(key) {
 }
 
 function renderAllVoterList() {
-  const el = document.getElementById('allVoterList');
-  if (!votes.length) {
-    el.innerHTML = `<div class="stat-empty">📝 還沒有投票記錄</div>`;
-    return;
-  }
-  el.innerHTML = [...votes].reverse().map(v => {
-    const isMe = v.name === currentUser;
-    const dLabels = v.dates.map(k=>{try{return fmtShort(dateFromKey(k))}catch{return k}}).join('、') || '未選';
-    const rLabels = v.restaurants.map(rid=>{const r=RESTAURANTS.find(x=>x.id===rid);return r?r.name:rid}).join('、') || '未選';
-    return `<div class="voter-rec-item">
-      <div class="vava">${v.name.charAt(0)}</div>
-      <div class="vdet">
-        <div class="vn">${v.name}${isMe?'<span class="vn-me">我</span>':''}</div>
-        <div class="vc">📅 ${dLabels}</div>
-        <div class="vc">🍽️ ${rLabels}</div>
-      </div>
-      <div class="vt">${v.ts}</div>
-    </div>`;
-  }).join('');
+  const html = !votes.length
+    ? `<div class="stat-empty">📝 還沒有投票記錄</div>`
+    : [...votes].reverse().map(v => {
+        const isMe = v.name === currentUser;
+        const dLabels = v.dates.map(k=>{try{return fmtShort(dateFromKey(k))}catch{return k}}).join('、') || '未選';
+        const rLabels = v.restaurants.map(rid=>{const r=RESTAURANTS.find(x=>x.id===rid);return r?r.name:rid}).join('、') || '未選';
+        return `<div class="voter-rec-item">
+          <div class="vava">${v.name.charAt(0)}</div>
+          <div class="vdet">
+            <div class="vn">${v.name}${isMe?'<span class="vn-me">我</span>':''}</div>
+            <div class="vc">📅 ${dLabels}</div>
+            <div class="vc">🍽️ ${rLabels}</div>
+          </div>
+          <div class="vt">${v.ts}</div>
+        </div>`;
+      }).join('');
+  // render in both Stats tab and Vote tab
+  const el1 = document.getElementById('allVoterList');
+  const el2 = document.getElementById('allVoterListVote');
+  if (el1) el1.innerHTML = html;
+  if (el2) el2.innerHTML = html;
 }
 
 /* ═══════════════════════════════════════════
@@ -1276,6 +1297,9 @@ function spawnFood() {
   const jitter  = Math.random()*1.2;
   const dur = wasabiDebuff ? (baseDur + jitter + 0.8) : (baseDur + jitter);
   el.style.animationDuration = dur + 's';
+  // 隨機選一種忽快忽慢的漂移動畫
+  const driftVar = ['foodDrift1','foodDrift2','foodDrift3'][Math.floor(Math.random()*3)];
+  el.style.animationName = driftVar;
 
   el.addEventListener('click',      eatFood);
   el.addEventListener('touchstart', eatFood, {passive:false});
@@ -1793,11 +1817,8 @@ function init() {
     document.getElementById('loginNameIn').value = currentUser;
     showApp();
   }
-
 }
 init();
 </script>
-
-
 </body>
 </html>
