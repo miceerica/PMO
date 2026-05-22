@@ -814,18 +814,36 @@ function _gasPost(payload) {
 }
 
 function _fetchVotes(silent) {
-  return fetch(GAS_URL + '?t=' + Date.now())
-    .then(r => r.json())
-    .then(data => {
-      if (!Array.isArray(data)) return;
+  // 用 JSONP（script tag）繞過 CORS 限制
+  return new Promise((resolve, reject) => {
+    const cbName = '_pmoCb' + Date.now();
+    const script = document.createElement('script');
+    const timer  = setTimeout(() => {
+      cleanup(); reject(new Error('timeout'));
+    }, 8000);
+
+    function cleanup() {
+      clearTimeout(timer);
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    }
+
+    window[cbName] = function(data) {
+      cleanup();
+      if (!Array.isArray(data)) { reject(new Error('bad data')); return; }
       votes = data.filter(v => v && v.name);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(votes));
       renderLoginChips();
       const app = document.getElementById('mainApp');
       if (app && app.style.display !== 'none') renderAll();
       _setSyncBadge(true);
-    })
-    .catch(() => _setSyncBadge(false));
+      resolve(votes);
+    };
+
+    script.onerror = () => { cleanup(); reject(new Error('script error')); };
+    script.src = GAS_URL + '?callback=' + cbName + '&t=' + Date.now();
+    document.head.appendChild(script);
+  }).catch(() => _setSyncBadge(false));
 }
 
 function loadData() {
