@@ -894,14 +894,7 @@ function _setSyncBadge(ok, reason) {
     _lastSyncErr = reason || '網路錯誤';
     b.title = _lastSyncErr;
     b.style.cursor = 'pointer';
-    b.onclick = () => alert('同步失敗原因：
-' + _lastSyncErr +
-      '
-
-請確認：
-1. GAS 腳本已更新並重新部署
-2. 試算表 ID 正確
-3. 部署權限選「任何人」');
+    b.onclick = () => alert('同步失敗原因：' + _lastSyncErr + '\n\n請確認：\n1. GAS 腳本已更新並重新部署\n2. 試算表 ID 正確\n3. 部署權限選「任何人」');
   }
 }
 function getMyVote() {
