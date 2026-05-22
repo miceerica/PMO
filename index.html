@@ -814,13 +814,14 @@ function _gasPost(payload) {
 }
 
 function _fetchVotes(silent) {
-  // 用 JSONP（script tag）繞過 CORS 限制
   return new Promise((resolve, reject) => {
     const cbName = '_pmoCb' + Date.now();
     const script = document.createElement('script');
     const timer  = setTimeout(() => {
-      cleanup(); reject(new Error('timeout'));
-    }, 8000);
+      cleanup();
+      _setSyncBadge(false, '連線逾時 — 請確認 GAS 已部署且試算表ID正確');
+      reject(new Error('timeout'));
+    }, 10000);
 
     function cleanup() {
       clearTimeout(timer);
@@ -830,7 +831,17 @@ function _fetchVotes(silent) {
 
     window[cbName] = function(data) {
       cleanup();
-      if (!Array.isArray(data)) { reject(new Error('bad data')); return; }
+      // GAS 回傳錯誤物件
+      if (data && data.error) {
+        _setSyncBadge(false, 'GAS錯誤: ' + data.error);
+        reject(new Error(data.error));
+        return;
+      }
+      if (!Array.isArray(data)) {
+        _setSyncBadge(false, '回應格式錯誤');
+        reject(new Error('bad data'));
+        return;
+      }
       votes = data.filter(v => v && v.name);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(votes));
       renderLoginChips();
@@ -840,10 +851,14 @@ function _fetchVotes(silent) {
       resolve(votes);
     };
 
-    script.onerror = () => { cleanup(); reject(new Error('script error')); };
+    script.onerror = () => {
+      cleanup();
+      _setSyncBadge(false, 'Script載入失敗 — GAS網址可能有誤');
+      reject(new Error('script error'));
+    };
     script.src = GAS_URL + '?callback=' + cbName + '&t=' + Date.now();
     document.head.appendChild(script);
-  }).catch(() => _setSyncBadge(false));
+  }).catch(err => console.warn('[PMO sync]', err.message));
 }
 
 function loadData() {
@@ -862,17 +877,31 @@ function saveData() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(votes));
 }
 
-function _setSyncBadge(ok) {
+let _lastSyncErr = '';
+function _setSyncBadge(ok, reason) {
   const b = document.getElementById('fbStatusBadge');
   if (!b) return;
   if (ok) {
     b.textContent = '✅ 已同步';
     b.style.background = '#e8f5e9';
     b.style.color = '#2e7d32';
+    b.title = '';
+    _lastSyncErr = '';
   } else {
     b.textContent = '⚠️ 離線';
     b.style.background = '#fff3e0';
     b.style.color = '#e65100';
+    _lastSyncErr = reason || '網路錯誤';
+    b.title = _lastSyncErr;
+    b.style.cursor = 'pointer';
+    b.onclick = () => alert('同步失敗原因：
+' + _lastSyncErr +
+      '
+
+請確認：
+1. GAS 腳本已更新並重新部署
+2. 試算表 ID 正確
+3. 部署權限選「任何人」');
   }
 }
 function getMyVote() {
