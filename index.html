@@ -825,7 +825,7 @@ function _fetchVotes(silent) {
       if (app && app.style.display !== 'none') renderAll();
       _setSyncBadge(true);
     })
-    .catch(() => { if (!silent) _setSyncBadge(false); });
+    .catch(() => _setSyncBadge(false));
 }
 
 function loadData() {
@@ -1892,8 +1892,9 @@ function closeBudgetModal() {
 }
 
 function updateFbBadge() {
-  // GAS 模式：badge 由 _setSyncBadge() 動態更新，這裡設初始值
-  _setSyncBadge(false);
+  // 初始顯示「同步中」，等 fetch 回來後才更新
+  const b = document.getElementById('fbStatusBadge');
+  if (b) { b.textContent='🔄 同步中'; b.style.background='#e3f2fd'; b.style.color='#1565c0'; }
 }
 
 function init() {
