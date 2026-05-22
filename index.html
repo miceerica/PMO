@@ -1,4 +1,15 @@
 <!DOCTYPE html>
+<!--
+══════════════════════════════════════════════════════
+  PMO 聚餐投票系統  —  線上版（Google Apps Script）
+══════════════════════════════════════════════════════
+  ✅ 票數儲存在 Google 試算表
+  ✅ 每 5 秒自動同步所有人的投票
+  ✅ 上傳 GitHub Pages 即可多人共用
+
+  如需更換 Google 試算表，搜尋 GAS_URL 替換網址即可
+══════════════════════════════════════════════════════
+-->
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
@@ -434,11 +445,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Micr
       <div class="header-ava">🍽️</div>
       <div>
         <div class="header-title">PMO吃到飽交流會</div>
-        <div class="header-sub">115年 6–7月 · 週三四五 · 12:00–17:00 · 可請4小時公假 · <strong style="font-size:1.15em;color:var(--warm)">較傾向⭐星期五</strong></div>
+        <div class="header-sub">115年 6–7月 · 週三四五 · 12:00–17:00 · 可請4小時公假 · <strong style="font-size:1.15em;color:var(--warm)">較傾向⭐星期五</strong> · <span style="color:#c0392b;font-size:.88em">🎏 端午節連假(6/19)不開放</span></div>
       </div>
     </div>
     <div class="header-user">
       <span class="user-pill" id="headerUser"></span>
+      <span id="fbStatusBadge" style="font-size:.65em;padding:2px 7px;border-radius:10px;background:#e3f2fd;color:#1565c0;white-space:nowrap">🔄 同步中</span>
       <button class="logout-btn" onclick="doLogout()">換人</button>
     </div>
   </div>
@@ -618,6 +630,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang TC','Micr
 const STORAGE_KEY = 'pmo_v2_votes';
 const USER_KEY    = 'pmo_v2_user';
 
+/* ═══════════════════════════════════════════
+   📊 GOOGLE APPS SCRIPT 設定
+   票數儲存於 Google 試算表，每 5 秒自動同步
+═══════════════════════════════════════════ */
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwypUqkQL8i76R8fIj1gi6_oeB9Zk_BPBX9ZfU4THxdj0albl33SINHsv5e1m1fHazY/exec';
+let _pollTimer = null;
+
 const RESTAURANTS = [
   {
     id:'nagomi', emoji:'🍱', name:'NAGOMI A8',
@@ -752,13 +771,16 @@ let wasabiDebuffRemaining = 0;
    DATE GENERATION
 ═══════════════════════════════════════════ */
 function genDates() {
+  // 排除端午節連假（115年6/19）
+  const EXCLUDE = new Set(['6_19']);
   const out = [];
   for (let m = 5; m <= 6; m++) {
     const days = new Date(2026, m + 1, 0).getDate();
     for (let d = 1; d <= days; d++) {
       const dt = new Date(2026, m, d);
       const dow = dt.getDay();
-      if (dow >= 3 && dow <= 5) out.push(dt);
+      const key = `${m+1}_${d}`;
+      if (dow >= 3 && dow <= 5 && !EXCLUDE.has(key)) out.push(dt);
     }
   }
   return out;
@@ -780,14 +802,60 @@ function dateFromKey(k) {
 }
 
 /* ═══════════════════════════════════════════
-   STORAGE
+   STORAGE  (Google Apps Script + localStorage 快取)
 ═══════════════════════════════════════════ */
-function loadData() {
-  votes = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-  currentUser = localStorage.getItem(USER_KEY) || null;
+function _gasPost(payload) {
+  return fetch(GAS_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: {'Content-Type': 'text/plain'},
+    body: JSON.stringify(payload)
+  });
 }
+
+function _fetchVotes(silent) {
+  return fetch(GAS_URL + '?t=' + Date.now())
+    .then(r => r.json())
+    .then(data => {
+      if (!Array.isArray(data)) return;
+      votes = data.filter(v => v && v.name);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(votes));
+      renderLoginChips();
+      const app = document.getElementById('mainApp');
+      if (app && app.style.display !== 'none') renderAll();
+      _setSyncBadge(true);
+    })
+    .catch(() => { if (!silent) _setSyncBadge(false); });
+}
+
+function loadData() {
+  currentUser = localStorage.getItem(USER_KEY) || null;
+  // 先用 localStorage 快取讓畫面立刻顯示
+  votes = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+  // 背景拉最新資料
+  _fetchVotes(true);
+  // 每 5 秒輪詢同步
+  if (_pollTimer) clearInterval(_pollTimer);
+  _pollTimer = setInterval(() => _fetchVotes(true), 5000);
+}
+
 function saveData() {
+  // GAS 模式不需要；僅更新本地快取
   localStorage.setItem(STORAGE_KEY, JSON.stringify(votes));
+}
+
+function _setSyncBadge(ok) {
+  const b = document.getElementById('fbStatusBadge');
+  if (!b) return;
+  if (ok) {
+    b.textContent = '✅ 已同步';
+    b.style.background = '#e8f5e9';
+    b.style.color = '#2e7d32';
+  } else {
+    b.textContent = '⚠️ 離線';
+    b.style.background = '#fff3e0';
+    b.style.color = '#e65100';
+  }
 }
 function getMyVote() {
   return votes.find(v => v.name === currentUser) || null;
@@ -1002,12 +1070,19 @@ function saveVote() {
     const n = new Date();
     return `${(n.getMonth()+1).toString().padStart(2,'0')}/${n.getDate().toString().padStart(2,'0')} ${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`;
   })();
-  const ei = votes.findIndex(v=>v.name===currentUser);
+  const isUpdate = votes.some(v => v.name === currentUser);
   const rec = {name:currentUser, dates:[...myDates].sort(), restaurants:[...myRests], ts};
-  if (ei>=0) { votes[ei]=rec; showToast(`✅ ${currentUser} 的投票已更新！`); }
-  else        { votes.push(rec); showToast(`🎉 ${currentUser} 投票成功！`); boom(); }
+  // 樂觀更新本地
+  const ei = votes.findIndex(v=>v.name===currentUser);
+  if (ei>=0) votes[ei]=rec; else votes.push(rec);
   saveData();
   renderAll();
+  if (isUpdate) showToast(`✅ ${currentUser} 的投票已更新！`);
+  else { showToast(`🎉 ${currentUser} 投票成功！`); boom(); }
+  // 寫入 Google 試算表
+  _gasPost({action:'save', ...rec})
+    .then(() => setTimeout(() => _fetchVotes(true), 1500))
+    .catch(() => showToast('⚠️ 同步失敗，請確認網路'));
 }
 function deleteMyVote() {
   if (!confirm(`確定要刪除 ${currentUser} 的所有投票嗎？`)) return;
@@ -1016,6 +1091,9 @@ function deleteMyVote() {
   saveData();
   renderAll();
   showToast('已刪除您的投票記錄');
+  _gasPost({action:'delete', name:currentUser})
+    .then(() => setTimeout(() => _fetchVotes(true), 1500))
+    .catch(() => {});
 }
 const ADMINS = ['Erica', '淋晚蒸'];
 function isAdmin() { return ADMINS.includes(currentUser); }
@@ -1033,6 +1111,9 @@ function clearAllVotes() {
   saveData();
   renderAll();
   showToast('已清除所有投票記錄 ✅');
+  _gasPost({action:'clear'})
+    .then(() => setTimeout(() => _fetchVotes(true), 1500))
+    .catch(() => {});
 }
 
 /* ── Restaurant Cards (detailed) ── */
@@ -1810,9 +1891,15 @@ function closeBudgetModal() {
   }
 }
 
+function updateFbBadge() {
+  // GAS 模式：badge 由 _setSyncBadge() 動態更新，這裡設初始值
+  _setSyncBadge(false);
+}
+
 function init() {
   loadData();
   renderLoginChips();
+  updateFbBadge();
   if (currentUser) {
     document.getElementById('loginNameIn').value = currentUser;
     showApp();
